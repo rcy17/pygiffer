@@ -151,6 +151,14 @@ try {
             Write-Host "Root: $Root"
             Write-Host "CLI:  $cliPath"
             Write-Host "Icon: $icon"
+            # Idempotent: wipe current + legacy keys first, then write fresh.
+            # Re-running install always overwrites cleanly without uninstall.
+            foreach ($entry in $entries) {
+                Remove-ShellKey $entry.SubKey
+            }
+            foreach ($legacy in $LegacyKeys) {
+                Remove-ShellKey $legacy
+            }
             foreach ($entry in $entries) {
                 Write-ShellKey @entry -IconPath $icon
             }

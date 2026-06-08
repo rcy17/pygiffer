@@ -17,6 +17,21 @@ GUI 通过子进程调用 CLI 完成转换与合并；资源管理器右键菜�
 - **横向合并**：多 GIF 拼接，支持去透明背景
 - **素材文件夹**：网格预览、合并队列
 - **右键菜单**：注册表绑定到 `pygiffer-cli`
+- **自动更新**：GUI 右下角显示版本号与更新状态，发现新版本时一键更新
+
+## 版本与自动更新
+
+- 版本号唯一来源：`pygiffer/version.py` 的 `__version__`。
+- 推送 `vX.Y.Z` 形式的 git tag 会触发 GitHub Action（`.github/workflows/release.yml`）：在 Windows 上打包并发布 Release，附带 `pygiffer-X.Y.Z-windows.zip`。CI 会用 tag 覆写 `__version__`，保证产物版本与 tag 一致。
+- GUI 启动时异步查询最新 Release，右下角状态：`检测更新中… / 已是最新 / 发现新版本 vX / 更新检测失败（网络故障）`。
+- 发现新版本时出现「更新」按钮：下载 zip → 解压 → 关闭 GUI → 覆盖安装目录 → 运行 `install_registry.bat` → 重启。仅打包版（frozen）支持。
+
+发布新版本：
+
+```powershell
+git tag v0.1.1
+git push origin v0.1.1
+```
 
 ## 安装
 

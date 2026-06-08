@@ -5,6 +5,7 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QFileDialog,
     QFrame,
@@ -31,7 +32,9 @@ from pygiffer.ui.theme import (
     THUMB_SIZE,
     default_window_size,
 )
+from pygiffer.ui.update_worker import UpdateCheckWorker, UpdateDownloadWorker
 from pygiffer.utils import format_timestamp, scan_gifs
+from pygiffer.version import __version__
 
 
 class GifThumb(QFrame):
@@ -109,13 +112,16 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(1, 2)
         layout.addWidget(splitter, stretch=1)
 
-        self.status_label = QLabel("就绪")
-        self.status_label.setObjectName("StatusLabel")
-        layout.addWidget(self.status_label)
+        layout.addLayout(self._build_footer())
 
         self._refresh_folder_list()
         self._rescan_all_gifs()
         self._refresh_merge_output_path()
+
+        self._update_info = None
+        self._update_check_worker: UpdateCheckWorker | None = None
+        self._update_download_worker: UpdateDownloadWorker | None = None
+        self._start_update_check()
 
     def _apply_window_icon(self):
         icon_file = taskbar_icon_path()
@@ -221,6 +227,110 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.merge_btn)
 
         return group
+
+    def _build_footer(self):
+        footer = QHBoxLayout()
+
+        self.status_label = QLabel("就绪")
+        self.status_label.setObjectName("StatusLabel")
+        footer.addWidget(self.status_label, stretch=1)
+
+        self.update_status_label = QLabel("")
+        self.update_status_label.setObjectName("MutedLabel")
+        footer.addWidget(self.update_status_label)
+
+        self.update_btn = QPushButton("更新")
+        self.update_btn.setObjectName("UpdateButton")
+        self.update_btn.clicked.connect(self._start_update_download)
+        self.update_btn.hide()
+        footer.addWidget(self.update_btn)
+
+        self.version_label = QLabel(f"v{__version__}")
+        self.version_label.setObjectName("MutedLabel")
+        footer.addWidget(self.version_label)
+
+        return footer
+
+    def _start_update_check(self):
+        self.update_status_label.setText("检测更新中…")
+        worker = UpdateCheckWorker(self)
+        worker.up_to_date.connect(self._on_update_up_to_date)
+        worker.update_available.connect(self._on_update_available)
+        worker.failed.connect(self._on_update_check_failed)
+        worker.finished.connect(lambda: setattr(self, "_update_check_worker", None))
+        self._update_check_worker = worker
+        worker.start()
+
+    def _on_update_up_to_date(self, _version):
+        self.update_status_label.setText("已是最新")
+        self.update_btn.hide()
+
+    def _on_update_available(self, info):
+        self._update_info = info
+        self.update_status_label.setText(f"发现新版本 v{info.version}")
+        self.update_btn.show()
+
+    def _on_update_check_failed(self, _message):
+        self.update_status_label.setText("更新检测失败（网络故障）")
+        self.update_btn.hide()
+
+    def _start_update_download(self):
+        from pygiffer.updater import is_frozen
+
+        if self._update_info is None:
+            return
+        if not is_frozen():
+            QMessageBox.information(
+                self,
+                "PyGiffer",
+                "开发模式下不支持自动更新，请使用 git 拉取最新代码。",
+            )
+            return
+
+        self.update_btn.setEnabled(False)
+        self.update_status_label.setText("正在下载更新…")
+        worker = UpdateDownloadWorker(self._update_info, self)
+        worker.progress.connect(self._on_update_progress)
+        worker.ready.connect(self._on_update_ready)
+        worker.failed.connect(self._on_update_download_failed)
+        worker.finished.connect(lambda: setattr(self, "_update_download_worker", None))
+        self._update_download_worker = worker
+        worker.start()
+
+    def _on_update_progress(self, done, total):
+        if total > 0:
+            pct = int(done * 100 / total)
+            self.update_status_label.setText(f"正在下载更新… {pct}%")
+        else:
+            self.update_status_label.setText(f"正在下载更新… {done // 1024} KB")
+
+    def _on_update_ready(self, new_dir, install_dir):
+        from pygiffer import updater
+
+        self.update_status_label.setText("准备安装更新…")
+        reply = QMessageBox.question(
+            self,
+            "PyGiffer",
+            "更新已下载完成。现在将关闭程序并安装新版本（需要管理员权限），完成后会自动重启。是否继续？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            self.update_status_label.setText(f"发现新版本 v{self._update_info.version}")
+            self.update_btn.setEnabled(True)
+            return
+
+        try:
+            updater.launch_update(Path(new_dir), Path(install_dir))
+        except Exception as exc:
+            QMessageBox.critical(self, "PyGiffer", f"启动更新失败:\n{exc}")
+            self.update_btn.setEnabled(True)
+            return
+        QApplication.quit()
+
+    def _on_update_download_failed(self, message):
+        self.update_status_label.setText("更新下载失败")
+        self.update_btn.setEnabled(True)
+        QMessageBox.critical(self, "PyGiffer", f"下载更新失败:\n{message}")
 
     def _set_busy(self, busy, message=""):
         self.convert_btn.setEnabled(not busy and bool(self.convert_path_label.toolTip()))

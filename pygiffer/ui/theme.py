@@ -74,4 +74,14 @@ def global_stylesheet() -> str:
             color: #71717a;
             font-size: {FONT_HINT_PX}px;
         }}
+        QPushButton#UpdateButton {{
+            background-color: #16a34a;
+            color: #ffffff;
+            border: none;
+            border-radius: 4px;
+            font-weight: 600;
+        }}
+        QPushButton#UpdateButton:hover {{
+            background-color: #15803d;
+        }}
     """

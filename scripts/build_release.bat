@@ -28,15 +28,9 @@ if "%CLEAN%"=="1" (
 if errorlevel 1 exit /b 1
 
 echo.
-echo [4/5] Moving pygiffer-cli.exe into _internal...
+echo [4/4] Staging layout (CLI into _internal + registry scripts)...
 ".\.venv\Scripts\python.exe" scripts\post_build_layout.py
 if errorlevel 1 exit /b 1
-
-echo.
-echo [5/5] Copying registry helper scripts...
-copy /Y scripts\install_registry.bat dist\pygiffer\ >nul
-copy /Y scripts\uninstall_registry.bat dist\pygiffer\ >nul
-copy /Y scripts\install_registry.ps1 dist\pygiffer\_internal\ >nul
 
 echo.
 echo Done. Release folder: dist\pygiffer\
