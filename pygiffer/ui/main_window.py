@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QIcon, QPixmap
+from PyQt6.QtGui import QCursor, QGuiApplication, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -89,6 +89,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("PyGiffer")
         self.resize(default_window_size())
+        self._center_on_active_screen()
         self._apply_window_icon()
 
         self.config = load_config()
@@ -122,6 +123,19 @@ class MainWindow(QMainWindow):
         self._update_check_worker: UpdateCheckWorker | None = None
         self._update_download_worker: UpdateDownloadWorker | None = None
         self._start_update_check()
+
+    def _center_on_active_screen(self):
+        # Center on the screen under the cursor so the window opens on the
+        # monitor the user is actually using (avoids off-screen placement on
+        # multi-monitor setups). Clamp inside the available area as a safety net.
+        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        avail = screen.availableGeometry()
+        size = self.frameGeometry().size()
+        x = avail.x() + max(0, (avail.width() - size.width()) // 2)
+        y = avail.y() + max(0, (avail.height() - size.height()) // 2)
+        self.move(x, y)
 
     def _apply_window_icon(self):
         icon_file = taskbar_icon_path()

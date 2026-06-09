@@ -18,7 +18,11 @@ COMMON_EXCLUDES = [
     "pandas",
     "notebook",
     "IPython",
-    "PyQt6",
+]
+
+# Unused Qt submodules trimmed from the GUI build. We keep QtCore/QtGui/QtWidgets;
+# never list the bare "PyQt6" here or the whole package gets excluded.
+QT_UNUSED_EXCLUDES = [
     "PyQt6.QtWebEngineWidgets",
     "PyQt6.QtWebEngineCore",
     "PyQt6.QtWebEngineQuick",
@@ -35,8 +39,9 @@ COMMON_EXCLUDES = [
     "PyQt6.QtDesigner",
 ]
 
-GUI_EXCLUDES = COMMON_EXCLUDES + ["cv2", "PIL", "numpy"]
-CLI_EXCLUDES = [x for x in COMMON_EXCLUDES if not x.startswith("PyQt6")]
+GUI_EXCLUDES = COMMON_EXCLUDES + QT_UNUSED_EXCLUDES + ["cv2", "PIL", "numpy"]
+# CLI must never bundle PyQt6 at all.
+CLI_EXCLUDES = COMMON_EXCLUDES + ["PyQt6"]
 
 cv2_datas, cv2_binaries, cv2_hidden = collect_all("cv2")
 CLI_HIDDEN = ["cv2", "PIL", "PIL._imaging", "numpy"] + cv2_hidden
@@ -90,30 +95,57 @@ def conda_runtime_binaries() -> list[tuple[str, str]]:
     return binaries
 
 
-def qt_neighbor_binaries() -> list[tuple[str, str]]:
-    import PyQt6
-
-    qt_bin = Path(PyQt6.__file__).resolve().parent / "Qt6" / "bin"
-    binaries: list[tuple[str, str]] = []
-    if qt_bin.is_dir():
-        for dll in sorted(qt_bin.glob("*.dll")):
-            binaries.append((str(dll), "PyQt6"))
-    return binaries
-
-
-def python_neighbor_binaries() -> list[tuple[str, str]]:
-    binaries: list[tuple[str, str]] = []
-    for name in ("python3.dll", f"python{sys.version_info.major}{sys.version_info.minor}.dll"):
-        path = Path(sys.base_prefix) / name
-        if path.exists():
-            binaries.append((str(path), "PyQt6"))
-    return binaries
-
-
+# Qt DLLs are collected by PyInstaller's standard PyQt6 hook into
+# PyQt6\Qt6\bin and made discoverable by the runtime hook below, so we do NOT
+# copy them flat into PyQt6\ (that just doubled the package size).
 gui_runtime_hooks = ["runtime/pyi_rth_qt_path.py"]
 cli_runtime_hooks = ["runtime/pyi_rth_cli_path.py"]
-gui_binaries = conda_runtime_binaries() + qt_neighbor_binaries() + python_neighbor_binaries()
+gui_binaries = conda_runtime_binaries()
 cli_binaries = conda_runtime_binaries() + cv2_binaries
+
+
+# Qt modules / helper DLLs we never use. Filtering them out of the GUI build
+# shrinks PyQt6\ dramatically (we only need QtCore/QtGui/QtWidgets).
+_QT_DROP_NAME_TOKENS = (
+    "qt6quick", "qt6qml", "qt63d", "qt6quick3d",
+    "qt6multimedia", "qt6spatialaudio",
+    "qt6pdf", "qt6designer", "qt6test", "qt6sql",
+    "qt6shadertools", "qt6charts", "qt6datavisualization",
+    "qt6network", "qt6bluetooth", "qt6nfc", "qt6positioning",
+    "qt6sensors", "qt6serialport", "qt6websockets", "qt6webchannel",
+    "qt6virtualkeyboard", "qt6texttospeech", "qt6remoteobjects",
+    "qt6labs", "qt6help", "qt6concurrent",
+    "opengl32sw", "d3dcompiler",
+    "avcodec", "avformat", "avutil", "swscale", "swresample",
+    # conda's ICU (versioned _58 symbols) is auto-pulled by PyInstaller but is
+    # incompatible with this Qt build, which needs the unversioned ICU exports
+    # provided by Windows' own System32\icuuc.dll. Drop it so the OS copy wins.
+    "icuuc", "icudt", "icuin", "icuio", "icutu",
+)
+_QT_DROP_PATH_TOKENS = (
+    "qt6/translations",
+    "qt6/qml",
+    "plugins/multimedia",
+    "plugins/qmltooling",
+    "plugins/scenegraph",
+    "plugins/sqldrivers",
+    "plugins/generic",
+    "plugins/networkinformation",
+    "plugins/tls",
+)
+
+
+def _keep_gui_entry(dest: str) -> bool:
+    low = dest.replace("\\", "/").lower()
+    if any(tok in low for tok in _QT_DROP_PATH_TOKENS):
+        return False
+    base = low.rsplit("/", 1)[-1]
+    return not any(tok in base for tok in _QT_DROP_NAME_TOKENS)
+
+
+def prune_qt(analysis) -> None:
+    analysis.binaries = [e for e in analysis.binaries if _keep_gui_entry(e[0])]
+    analysis.datas = [e for e in analysis.datas if _keep_gui_entry(e[0])]
 
 a_gui = Analysis(
     ["main.py"],
@@ -143,6 +175,8 @@ a_cli = Analysis(
 )
 
 MERGE((a_gui, "gui", "gui"), (a_cli, "cli", "cli"))
+
+prune_qt(a_gui)
 
 pyz_gui = PYZ(a_gui.pure, cipher=block_cipher)
 pyz_cli = PYZ(a_cli.pure, cipher=block_cipher)
