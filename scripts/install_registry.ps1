@@ -2,7 +2,9 @@
 param(
     [ValidateSet("install", "uninstall")]
     [string]$Action = "install",
-    [string]$Root
+    [string]$Root,
+    # When set (used by the auto-updater), do not wait for a key press.
+    [switch]$NoPause
 )
 
 $ErrorActionPreference = "Stop"
@@ -125,7 +127,9 @@ function Wait-ForExit {
         Write-Host ""
         Write-Host "完成。" -ForegroundColor Green
     }
-    Read-Host "按 Enter 键关闭窗口"
+    if (-not $NoPause) {
+        Read-Host "按 Enter 键关闭窗口"
+    }
     exit $ExitCode
 }
 

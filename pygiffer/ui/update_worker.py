@@ -30,10 +30,11 @@ class UpdateCheckWorker(QThread):
 
 
 class UpdateDownloadWorker(QThread):
-    """Downloads + extracts the release, then prepares the swap."""
+    """Downloads (with cache/resume) + extracts the release, then prepares the swap."""
 
     progress = pyqtSignal(int, int)   # downloaded, total
-    ready = pyqtSignal(str, str)      # new_dir, install_dir
+    status = pyqtSignal(str)          # human-readable phase
+    ready = pyqtSignal(object)        # UpdatePlan
     failed = pyqtSignal(str)
 
     def __init__(self, info: ReleaseInfo, parent=None):
@@ -42,13 +43,13 @@ class UpdateDownloadWorker(QThread):
 
     def run(self) -> None:
         try:
-            zip_path = updater.download_release(self._info, progress=self._emit_progress)
-            new_dir = updater.extract_release(zip_path)
-            install_dir = updater.install_root()
+            self.status.emit("正在获取更新信息…")
+            manifest = updater.fetch_manifest(self._info)
+            plan = updater.prepare_update(self._info, manifest, progress=self._emit_progress)
         except Exception as exc:
             self.failed.emit(str(exc))
             return
-        self.ready.emit(str(new_dir), str(install_dir))
+        self.ready.emit(plan)
 
     def _emit_progress(self, done: int, total: int) -> None:
         self.progress.emit(done, total)

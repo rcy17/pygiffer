@@ -305,6 +305,7 @@ class MainWindow(QMainWindow):
         self.update_status_label.setText("正在下载更新…")
         worker = UpdateDownloadWorker(self._update_info, self)
         worker.progress.connect(self._on_update_progress)
+        worker.status.connect(self.update_status_label.setText)
         worker.ready.connect(self._on_update_ready)
         worker.failed.connect(self._on_update_download_failed)
         worker.finished.connect(lambda: setattr(self, "_update_download_worker", None))
@@ -318,14 +319,15 @@ class MainWindow(QMainWindow):
         else:
             self.update_status_label.setText(f"正在下载更新… {done // 1024} KB")
 
-    def _on_update_ready(self, new_dir, install_dir):
+    def _on_update_ready(self, plan):
         from pygiffer import updater
 
         self.update_status_label.setText("准备安装更新…")
         reply = QMessageBox.question(
             self,
             "PyGiffer",
-            "更新已下载完成。现在将关闭程序并安装新版本（需要管理员权限），完成后会自动重启。是否继续？",
+            "更新已下载完成。现在将关闭程序并安装新版本（需要管理员权限），"
+            "安装过程会弹出一个命令行窗口，完成后会自动重启。是否继续？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
@@ -334,7 +336,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            updater.launch_update(Path(new_dir), Path(install_dir))
+            updater.launch_update(plan)
         except Exception as exc:
             QMessageBox.critical(self, "PyGiffer", f"启动更新失败:\n{exc}")
             self.update_btn.setEnabled(True)

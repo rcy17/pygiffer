@@ -39,17 +39,23 @@ jobs:
       - name: Stage release layout
         run: python scripts/post_build_layout.py
 
-      - name: Package zip
+      - name: Package full zip (fresh-install download)
         shell: pwsh
         run: |
-          $zip = "pygiffer-${{ env.PYGIFFER_VERSION }}-windows.zip"
+          $zip = "dist/pygiffer-${{ env.PYGIFFER_VERSION }}-windows.zip"
           Compress-Archive -Path "dist/pygiffer/*" -DestinationPath $zip -Force
-          echo "ASSET_ZIP=$zip" >> $env:GITHUB_ENV
+
+      - name: Package layered update assets
+        run: python scripts/package_release.py
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: PyGiffer ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
-          files: ${{ env.ASSET_ZIP }}
+          files: |
+            dist/pygiffer-${{ env.PYGIFFER_VERSION }}-windows.zip
+            dist/pygiffer-app-*-windows.zip
+            dist/pygiffer-deps-*-windows.zip
+            dist/manifest.json
           generate_release_notes: true

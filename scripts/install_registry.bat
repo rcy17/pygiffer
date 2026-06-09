@@ -2,11 +2,14 @@
 setlocal EnableExtensions
 title PyGiffer - Install context menu
 
+rem Optional first arg "nopause" => run silently (used by the auto-updater).
+set "ARG=%~1"
+
 net session >nul 2>&1
 if %errorLevel% == 0 goto :run
 
 echo Requesting administrator privileges...
-powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs -Wait"
+powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList '%ARG%' -Verb RunAs -Wait"
 exit /b %ERRORLEVEL%
 
 :run
@@ -16,5 +19,9 @@ echo.
 
 set "ROOT=%~dp0"
 set "ROOT=%ROOT:~0,-1%"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0_internal\install_registry.ps1" -Action install -Root "%ROOT%"
+if /I "%ARG%"=="nopause" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0_internal\install_registry.ps1" -Action install -Root "%ROOT%" -NoPause
+) else (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0_internal\install_registry.ps1" -Action install -Root "%ROOT%"
+)
 exit /b %ERRORLEVEL%
